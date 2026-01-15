@@ -65,4 +65,4 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 - TDD: add/adjust tests in `tests/` alongside behavior changes; keep tests fast and deterministic.
 
 ## CI
-`.github/workflows/test.yml` installs uv, syncs dev dependencies, and runs tests via `uv run pytest`.
+`.github/workflows/test.yml` runs: `uv sync --frozen --group dev` → `uv run pytest -q` → `uv run ruff check .` → `uv run mypy .`.
