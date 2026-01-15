@@ -9,7 +9,6 @@ dependencies = [
   "fastapi>=0.95.0",
   "uvicorn[standard]>=0.22.0",
   "scikit-learn>=1.2",
-  "pandas>=1.5",
 ]
 
 [dependency-groups]

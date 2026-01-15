@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
@@ -16,6 +16,14 @@ class Features(BaseModel):
         if any(not isinstance(val, (int, float)) for val in v):
             raise ValueError("values must be numbers")
         return [float(val) for val in v]
+
+
+def get_model():
+    """Centralized dependency to ensure model is loaded."""
+    model = getattr(app.state, "model", None)
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    return model
 
 
 @asynccontextmanager
@@ -38,14 +46,11 @@ async def validation_exception_handler(request, exc: RequestValidationError):
 
 
 @app.get("/health")
-def health():
+def health(model=Depends(get_model)):
     return {"status": "ok"}
 
 
 @app.post("/predict")
-def predict_endpoint(feat: Features):
-    model = getattr(app.state, "model", None)
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+def predict_endpoint(feat: Features, model=Depends(get_model)):
     pred, probs = predict(model, feat.values)
     return {"prediction": pred, "probabilities": probs}
