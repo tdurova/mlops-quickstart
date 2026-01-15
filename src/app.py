@@ -2,13 +2,20 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, conlist, confloat
+from pydantic import BaseModel, Field, field_validator
 from .model import train_model, predict
 
 
 class Features(BaseModel):
     # Enforce exactly four numeric features (ints allowed, coerced to float).
-    values: conlist(confloat(strict=False), min_length=4, max_length=4)  # type: ignore[arg-type]
+    values: list[float] = Field(min_length=4, max_length=4)
+
+    @field_validator("values")
+    @classmethod
+    def ensure_numbers(cls, v: list[float]) -> list[float]:
+        if any(not isinstance(val, (int, float)) for val in v):
+            raise ValueError("values must be numbers")
+        return [float(val) for val in v]
 
 
 @asynccontextmanager
