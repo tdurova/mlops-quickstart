@@ -15,4 +15,8 @@ COPY src/ ./src
 ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8080
-CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8080"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-8080}/health', timeout=5)" || exit 1
+
+CMD ["sh", "-c", "exec uvicorn src.app:app --host 0.0.0.0 --port ${PORT:-8080}"]

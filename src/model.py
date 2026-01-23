@@ -8,10 +8,9 @@ def train_model():
     """Train a tiny demo model (Iris) and return the fitted pipeline."""
     data = load_iris()
     X, y = data.data, data.target
-    pipe = Pipeline([
-        ("scale", StandardScaler()),
-        ("clf", LogisticRegression(max_iter=200))
-    ])
+    pipe = Pipeline(
+        [("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=200))]
+    )
     pipe.fit(X, y)
     return pipe
 

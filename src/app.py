@@ -4,6 +4,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from .model import train_model, predict
+from .logging_util import configure_logging, RequestContextMiddleware
 
 
 class Features(BaseModel):
@@ -33,7 +34,9 @@ async def lifespan(app: FastAPI):
     yield
 
 
+configure_logging()
 app = FastAPI(title="mlops-quickstart: demo inference", lifespan=lifespan)
+app.add_middleware(RequestContextMiddleware)
 
 
 @app.exception_handler(RequestValidationError)

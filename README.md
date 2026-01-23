@@ -1,15 +1,22 @@
 # mlops-quickstart
 
-Minimal MLOps demo: a Dockerized FastAPI inference service with CI. Uses `uv` for packaging, `make` for tasks, and Docker Compose for local orchestration.
+An opinionated, production-shaped MLOps starter: a Dockerized FastAPI inference service (sklearn) with CI and a Cloud Run deploy workflow.
+
+## Why this exists
+- Show end-to-end “ship a model as a service” basics (validation, readiness, logging, Docker, CI/CD) without heavyweight infra.
+- Be small enough to understand in one sitting, but structured enough to look like real work in a 2026 MLOps interview.
+
+## Architecture at a glance
+- **API**: FastAPI (`src/app.py`) with `/health` (readiness-gated) and `/predict`.
+- **Model lifecycle**: trains an Iris `StandardScaler + LogisticRegression` pipeline on startup and stores it on `app.state.model` (`src/model.py`).
+- **Contracts**: request/response and validation behavior are test-backed (`tests/test_app.py`).
+- **Observability**: JSON logs + request-id propagation middleware (`src/logging_util.py`).
+- **Packaging**: `uv` + `pyproject.toml`/`uv.lock`; common tasks via `Makefile`.
+- **Container**: `Dockerfile` runs `uvicorn` and honors Cloud Run’s `PORT`.
 
 ## Prerequisites
 - Docker
 - uv (modern Python package manager)
-
-Install uv (once):
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
 
 ## Quickstart (5 minutes)
 
@@ -30,9 +37,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 4. Or start the full stack with Docker:
    ```bash
-   # Optional: copy and edit .env if you want to override defaults
-   cp env.example .env
-   docker compose up -d --build
+   # Optional: copy and edit `.env` if you want to override defaults
+   cp .env.example .env
+   make up
    ```
 
 5. Test the API:
@@ -52,11 +59,26 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 - `make logs` – tail the API logs
 
 ## Configuration
-`env.example` documents required variables. `.env` is optional; Compose defaults expose the API on `APP_PORT=8080` and configure Postgres credentials that match `compose.yaml`.
+`.env` is optional. Start from `.env.example` (or `env.example`) and override as needed.
 
 ## Services (docker compose)
-- `api`: builds from the local Dockerfile and runs `uvicorn src.app:app` on `${APP_PORT:-8080}` (uses defaults unless you provide `.env`).
-- `db`: optional Postgres 16 service with a persistent volume (`db_data`) for future persistence/metrics examples (not used by the current demo app).
+- `api`: builds from `Dockerfile` and serves HTTP on container port `8080` (mapped to host `${APP_PORT:-8080}`).
+- `db`: optional Postgres 16 placeholder for future examples (the current demo app does not use a database).
+
+## Logging
+- Structured logs are NDJSON to stdout (Datadog-friendly), tagged with `service`, `env`, `version`, and `request_id`.
+- Incoming `X-Request-ID` is honored (or generated); responses echo it, and each request log includes path/method/status/duration_ms.
+- Control verbosity with `LOG_LEVEL` (default INFO); 4xx log at WARN, 5xx at ERROR with stack traces; no raw payloads are logged by default.
+
+## Deploy (Cloud Run)
+This repo ships with a GitHub Actions workflow that builds a container (Cloud Build), pushes it to Artifact Registry, and deploys to Cloud Run after CI succeeds on `main`: `.github/workflows/deploy-cloudrun.yml`.
+
+Required GitHub secrets:
+- `GCP_PROJECT_ID`
+- `GCP_REGION` (example: `us-central1`)
+- `GCP_ARTIFACT_REPO` (Artifact Registry Docker repo name)
+- `CLOUD_RUN_SERVICE` (Cloud Run service name)
+- `GCP_WIF_PROVIDER` and `GCP_WIF_SERVICE_ACCOUNT` (recommended: Workload Identity Federation; no long-lived keys)
 
 ## Engineering guidelines (small, practical)
 - KISS: keep modules small and focused; avoid magic config when defaults suffice.
@@ -66,3 +88,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## CI
 `.github/workflows/test.yml` runs: `uv sync --frozen --group dev` → `uv run pytest -q` → `uv run ruff check .` → `uv run mypy .`.
+
+## Ops
+- **Health/readiness**: `GET /health` returns `200 {"status":"ok"}` only when the model is loaded; otherwise `503`.
+- **Logs**: `make logs` (Docker) or Cloud Run Logs Explorer; correlate requests via `X-Request-ID`.
+
+## Trade-offs
+- **Why Cloud Run**: minimal ops surface area, fast iteration, and “production enough” for an inference microservice.
+- **Why not Kubernetes**: this repo is intentionally small; adding GKE/Helm would add complexity without a demonstrated requirement.

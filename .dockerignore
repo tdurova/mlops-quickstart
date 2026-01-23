@@ -1,9 +1,14 @@
 .venv
+.uv_cache
 .pytest_cache
 .mypy_cache
 .ruff_cache
 __pycache__
 .git
+.env
+.cursor
+.vscode
+tempwrite
 *.pyc
 *.pyo
 *.pyd
@@ -32,7 +37,3 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis
-.pytest_cache
-.mypy_cache
-.ruff_cache
-__pycache__

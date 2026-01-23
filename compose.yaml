@@ -1,18 +1,18 @@
 services:
   api:
     build: .
-    command: uv run uvicorn src.app:app --host 0.0.0.0 --port ${APP_PORT:-8080}
+    # Inherits CMD from Dockerfile (exec uvicorn with proper signal handling)
     ports:
-      - "${APP_PORT:-8080}:${APP_PORT:-8080}"
+      - "${APP_PORT:-8080}:8080"
 
   db:
     # Optional Postgres service for future persistence/metrics examples.
     # The current demo app does not connect to this database.
     image: postgres:16
     environment:
-      POSTGRES_USER: mlops_user
-      POSTGRES_PASSWORD: mlops_password
-      POSTGRES_DB: mlops_db
+      POSTGRES_USER: ${POSTGRES_USER:-mlops_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mlops_password}
+      POSTGRES_DB: ${POSTGRES_DB:-mlops_db}
     ports:
       - "5432:5432"
     volumes:
