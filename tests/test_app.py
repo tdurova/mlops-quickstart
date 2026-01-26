@@ -7,7 +7,7 @@ from contextlib import suppress
 from uuid import UUID
 import pytest
 import httpx
-from src.app import app
+from src.app import app, get_model
 from src.logging_util import JSONFormatter, _sanitize_request_id
 
 
@@ -90,6 +90,30 @@ def test_predict_null_in_payload_returns_400(api_request):
     assert data["detail"] == "Invalid request"
 
 
+def test_predict_too_many_values_returns_400(api_request):
+    r = api_request("POST", "/predict", json={"values": [1, 2, 3, 4, 5]})
+    assert r.status_code == 400
+    data = r.json()
+    assert data["detail"] == "Invalid request"
+    assert data["errors"]
+
+
+def test_predict_missing_values_field_returns_400(api_request):
+    r = api_request("POST", "/predict", json={})
+    assert r.status_code == 400
+    data = r.json()
+    assert data["detail"] == "Invalid request"
+    assert data["errors"]
+
+
+def test_predict_accepts_ints_via_coercion(api_request):
+    r = api_request("POST", "/predict", json={"values": [5, 3, 1, 0]})
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data["prediction"], int)
+    assert isinstance(data["probabilities"], list)
+
+
 def test_request_id_propagation_and_json_logs(api_request):
     buffer = StringIO()
     handler = logging.StreamHandler(buffer)
@@ -128,6 +152,21 @@ def test_request_id_sanitization_rejects_control_chars():
     UUID(sanitized)
 
 
+def test_request_id_differs_per_request(api_request):
+    first = api_request("GET", "/health")
+    second = api_request("GET", "/health")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    first_id = first.headers.get("X-Request-ID")
+    second_id = second.headers.get("X-Request-ID")
+
+    assert first_id
+    assert second_id
+    assert first_id != second_id
+
+
 def test_middleware_logs_4xx_at_warning_level(api_request):
     """Verify 4xx responses are logged at WARNING level."""
     buffer = StringIO()
@@ -161,6 +200,81 @@ def test_middleware_logs_4xx_at_warning_level(api_request):
     finally:
         logger.removeHandler(handler)
         logger.setLevel(original_level)
+
+
+def test_middleware_logs_5xx_at_error_level(api_request, monkeypatch):
+    """Ensure 5xx responses emit error-level logs and include request_id."""
+    buffer = StringIO()
+    handler = logging.StreamHandler(buffer)
+    formatter = JSONFormatter(
+        os.getenv("SERVICE_NAME", "mlops-quickstart"),
+        os.getenv("APP_ENV", "local"),
+        os.getenv("APP_VERSION", "dev"),
+    )
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger("app.request")
+    original_level = logger.level
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
+
+    class BadModel:
+        def predict(self, _):  # pragma: no cover - simple stub
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=500, detail="boom")
+
+    def bad_model_dep():
+        return BadModel()
+
+    monkeypatch.setitem(app.dependency_overrides, get_model, bad_model_dep)
+
+    try:
+        r = api_request("POST", "/predict", json={"values": [5, 3, 1, 0]})
+        assert r.status_code == 500
+
+        handler.flush()
+        captured = buffer.getvalue().strip().splitlines()
+        parsed = [json.loads(line) for line in captured]
+        request_logs = [e for e in parsed if e.get("event") == "request"]
+        assert request_logs, "expected request log entry"
+        assert any(e.get("level") == "error" for e in request_logs)
+        assert any(e.get("request_id") for e in request_logs)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(original_level)
+        app.dependency_overrides.pop(get_model, None)
+
+
+def test_health_returns_503_when_model_missing(api_request, monkeypatch):
+    def missing_model():
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    monkeypatch.setitem(app.dependency_overrides, get_model, missing_model)
+    try:
+        r = api_request("GET", "/health")
+        assert r.status_code == 503
+        assert r.json() == {"detail": "Model not loaded"}
+    finally:
+        app.dependency_overrides.pop(get_model, None)
+
+
+def test_predict_returns_503_when_model_missing(api_request, monkeypatch):
+    def missing_model():
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    monkeypatch.setitem(app.dependency_overrides, get_model, missing_model)
+    try:
+        sample = [5.1, 3.5, 1.4, 0.2]
+        r = api_request("POST", "/predict", json={"values": sample})
+        assert r.status_code == 503
+        assert r.json() == {"detail": "Model not loaded"}
+    finally:
+        app.dependency_overrides.pop(get_model, None)
 
 
 def test_middleware_logs_request_metadata(api_request):
